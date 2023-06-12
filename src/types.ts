@@ -5,7 +5,9 @@ export type Role = 'user' | 'assistant' | 'system'
 export type FetchFn = typeof fetch
 
 export type ChatGPTAPIOptions = {
+  apiBaseCustom?: string
   apiKey: string
+  customHeader?: any
 
   /** @defaultValue `'https://api.openai.com'` **/
   apiBaseUrl?: string

@@ -18,7 +18,8 @@ export class ChatGPTAPI {
   protected _apiBaseUrl: string
   protected _apiOrg?: string
   protected _debug: boolean
-
+  protected _apiBaseCustom: string
+  public _customHeader: any
   protected _systemMessage: string
   protected _completionParams: Omit<
     types.openai.CreateChatCompletionRequest,
@@ -56,6 +57,8 @@ export class ChatGPTAPI {
       debug = false,
       messageStore,
       completionParams,
+      customHeader = {},
+      apiBaseCustom,
       systemMessage,
       maxModelTokens = 4000,
       maxResponseTokens = 1000,
@@ -66,6 +69,8 @@ export class ChatGPTAPI {
 
     this._apiKey = apiKey
     this._apiOrg = apiOrg
+    this._apiBaseCustom = apiBaseCustom
+    this._customHeader = customHeader
     this._apiBaseUrl = apiBaseUrl
     this._debug = !!debug
     this._fetch = fetch
@@ -181,10 +186,12 @@ export class ChatGPTAPI {
 
     const responseP = new Promise<types.ChatMessage>(
       async (resolve, reject) => {
-        const url = `${this._apiBaseUrl}/chat/completions`
+        const url =
+          this._apiBaseCustom || `${this._apiBaseUrl}/chat/completions`
         const headers = {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this._apiKey}`
+          Authorization: `Bearer ${this._apiKey}`,
+          ...this._customHeader
         }
         const body = {
           max_tokens: maxTokens,
