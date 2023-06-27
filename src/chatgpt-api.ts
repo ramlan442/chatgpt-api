@@ -8,7 +8,7 @@ import * as types from './types'
 import { fetch as globalFetch } from './fetch'
 import { fetchSSE } from './fetch-sse'
 
-const CHATGPT_MODEL = 'gpt-3.5-turbo'
+const CHATGPT_MODEL = 'gpt-3.5-turbo-16k'
 
 const USER_LABEL_DEFAULT = 'User'
 const ASSISTANT_LABEL_DEFAULT = 'ChatGPT'
@@ -20,7 +20,7 @@ export class ChatGPTAPI {
   protected _debug: boolean
   protected _apiBaseCustom: string
   public _customHeader: any
-  protected _systemMessage: string
+  public _systemMessage: string
   protected _completionParams: Omit<
     types.openai.CreateChatCompletionRequest,
     'messages' | 'n'

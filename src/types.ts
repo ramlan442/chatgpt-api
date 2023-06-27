@@ -8,7 +8,7 @@ export type ChatGPTAPIOptions = {
   apiBaseCustom?: string
   apiKey: string
   customHeader?: any
-
+  customBody?: 'aritek';
   /** @defaultValue `'https://api.openai.com'` **/
   apiBaseUrl?: string
 
