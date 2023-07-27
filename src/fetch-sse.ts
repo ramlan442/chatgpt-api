@@ -8,11 +8,12 @@ export async function fetchSSE(
   url: string,
   options: Parameters<typeof fetch>[1] & {
     onMessage: (data: string) => void
-    onError?: (error: any) => void
+    onError?: (error: any) => void,
+    onFinish?: (d: boolean) => void
   },
   fetch: types.FetchFn = globalFetch
 ) {
-  const { onMessage, onError, ...fetchOptions } = options
+  const { onMessage, onError, onFinish, ...fetchOptions } = options
   const res = await fetch(url, fetchOptions)
   if (!res.ok) {
     let reason: string
@@ -80,6 +81,9 @@ export async function fetchSSE(
         feed(chunk.toString())
       }
     })
+    body.on('close', () => onFinish(true))
+    body.on('error', () => onFinish(true))
+    body.on('end', () => onFinish(true))
   } else {
     for await (const chunk of streamAsyncIterable(res.body)) {
       const str = new TextDecoder().decode(chunk)

@@ -28,6 +28,7 @@ export class ChatGPTAPI {
   protected _maxModelTokens: number
   protected _maxResponseTokens: number
   protected _fetch: types.FetchFn
+  protected _Body: (d) => any
 
   protected _getMessageById: types.GetMessageByIdFunction
   protected _upsertMessage: types.UpsertMessageFunction
@@ -64,7 +65,8 @@ export class ChatGPTAPI {
       maxResponseTokens = 1000,
       getMessageById,
       upsertMessage,
-      fetch = globalFetch
+      fetch = globalFetch,
+      Body = (body) => body
     } = opts
 
     this._apiKey = apiKey
@@ -74,6 +76,7 @@ export class ChatGPTAPI {
     this._apiBaseUrl = apiBaseUrl
     this._debug = !!debug
     this._fetch = fetch
+    this._Body = Body
 
     this._completionParams = {
       model: CHATGPT_MODEL,
@@ -188,17 +191,21 @@ export class ChatGPTAPI {
       async (resolve, reject) => {
         const url =
           this._apiBaseCustom || `${this._apiBaseUrl}/chat/completions`
-        const headers = {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this._apiKey}`,
-          ...this._customHeader
-        }
-        const body = {
+        const body = this._Body({
           max_tokens: maxTokens,
           ...this._completionParams,
           ...completionParams,
           messages,
           stream
+        })
+        let cHeader = this._customHeader || {};
+        if(typeof this._customHeader === 'function'){
+          cHeader = this._customHeader(body)
+        }
+        const headers = {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this._apiKey}`,
+          ...cHeader
         }
 
         // Support multiple organizations
@@ -249,6 +256,9 @@ export class ChatGPTAPI {
                   console.warn('OpenAI stream SEE event unexpected error', err)
                   return reject(err)
                 }
+              },
+              onFinish: () => {
+                return resolve(result)
               }
             },
             this._fetch
@@ -267,7 +277,7 @@ export class ChatGPTAPI {
               const msg = `OpenAI error ${
                 res.status || res.statusText
               }: ${reason}`
-              const error = new types.ChatGPTError(msg, { cause: res })
+              const error = new types.ChatGPTError(msg, { cause: res as any })
               error.statusCode = res.status
               error.statusText = res.statusText
               return reject(error)

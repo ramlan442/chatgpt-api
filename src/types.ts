@@ -32,6 +32,7 @@ export type ChatGPTAPIOptions = {
   messageStore?: Keyv
   getMessageById?: GetMessageByIdFunction
   upsertMessage?: UpsertMessageFunction
+  Body?: (body) => any
 
   fetch?: FetchFn
 }
