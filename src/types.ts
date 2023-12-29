@@ -8,7 +8,7 @@ export type ChatGPTAPIOptions = {
   apiBaseCustom?: string
   apiKey: string
   customHeader?: any
-  customBody?: 'aritek';
+  customBody?: 'aritek'
   /** @defaultValue `'https://api.openai.com'` **/
   apiBaseUrl?: string
 
@@ -19,7 +19,7 @@ export type ChatGPTAPIOptions = {
 
   completionParams?: Partial<
     Omit<openai.CreateChatCompletionRequest, 'messages' | 'n' | 'stream'>
-  >
+  > & { functions?: any; function_call?: string }
 
   systemMessage?: string
 
@@ -46,6 +46,7 @@ export type SendMessageOptions = {
   stream?: boolean
   systemMessage?: string
   timeoutMs?: number
+  onFile?: (partialResponse: ChatMessage) => void
   onProgress?: (partialResponse: ChatMessage) => void
   abortSignal?: AbortSignal
   completionParams?: Partial<
@@ -68,9 +69,11 @@ export type SendMessageBrowserOptions = {
 export interface ChatMessage {
   id: string
   text: string
+  files: string[]
   role: Role
   name?: string
   delta?: string
+  function_call?: any
   detail?:
     | openai.CreateChatCompletionResponse
     | CreateChatCompletionStreamResponse
@@ -203,6 +206,7 @@ export namespace openai {
         delta: {
           role: Role
           content?: string
+          function_call?: any
         }
         index: number
         finish_reason: string | null
@@ -260,6 +264,8 @@ export namespace openai {
      * @memberof ChatCompletionResponseMessage
      */
     content: string
+
+    function_call?: any
   }
   export declare const ChatCompletionResponseMessageRoleEnum: {
     readonly System: 'system'

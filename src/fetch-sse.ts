@@ -8,7 +8,7 @@ export async function fetchSSE(
   url: string,
   options: Parameters<typeof fetch>[1] & {
     onMessage: (data: string) => void
-    onError?: (error: any) => void,
+    onError?: (error: any) => void
     onFinish?: (d: boolean) => void
   },
   fetch: types.FetchFn = globalFetch

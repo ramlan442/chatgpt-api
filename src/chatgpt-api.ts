@@ -31,7 +31,7 @@ export class ChatGPTAPI {
   protected _Body: (d) => any
 
   protected _getMessageById: types.GetMessageByIdFunction
-  protected _upsertMessage: types.UpsertMessageFunction
+  _upsertMessage: types.UpsertMessageFunction
 
   protected _messageStore: Keyv<types.ChatMessage>
 
@@ -144,13 +144,16 @@ export class ChatGPTAPI {
    */
   async sendMessage(
     text: string,
-    opts: types.SendMessageOptions = {}
+    opts: types.SendMessageOptions & {
+      cacheMessage?: types.openai.ChatCompletionRequestMessage[]
+    } = {}
   ): Promise<types.ChatMessage> {
     const {
       parentMessageId,
       messageId = uuidv4(),
       timeoutMs,
       onProgress,
+      onFile,
       stream = onProgress ? true : false,
       completionParams,
       conversationId
@@ -167,6 +170,7 @@ export class ChatGPTAPI {
     const message: types.ChatMessage = {
       role: 'user',
       id: messageId,
+      files: [],
       conversationId,
       parentMessageId,
       text
@@ -182,6 +186,7 @@ export class ChatGPTAPI {
     const result: types.ChatMessage = {
       role: 'assistant',
       id: uuidv4(),
+      files: [],
       conversationId,
       parentMessageId: messageId,
       text: ''
@@ -198,13 +203,14 @@ export class ChatGPTAPI {
           messages,
           stream
         })
-        let cHeader = this._customHeader || {};
-        if(typeof this._customHeader === 'function'){
+        let cHeader = this._customHeader || {}
+        if (typeof this._customHeader === 'function') {
           cHeader = this._customHeader(body)
         }
         const headers = {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this._apiKey}`,
+          'user-agent': 'okhttp/5.0.0-alpha.11',
           ...cHeader
         }
 
@@ -242,15 +248,46 @@ export class ChatGPTAPI {
 
                   if (response.choices?.length) {
                     const delta = response.choices[0].delta
+
                     result.delta = delta.content
                     if (delta?.content) result.text += delta.content
-
-                    if (delta.role) {
-                      result.role = delta.role
+                    if (delta.role) result.role = delta.role
+                    if (delta.function_call?.name)
+                      result.function_call = delta.function_call
+                    if (delta.function_call?.arguments) {
+                      result.function_call.arguments +=
+                        delta.function_call.arguments
                     }
 
                     result.detail = response
                     onProgress?.(result)
+                  }
+                  const c = response as any
+                  if (c.type) {
+                    // console.log(c)
+                    switch (c.type) {
+                      case 'msg_imagen':
+                      case 'msg_chunk':
+                        if (c.msg_chunk.choices[0].content)
+                          result.text += c.msg_chunk.choices[0].content
+                        onProgress?.(result)
+                        if (c.msg_chunk.choices[0].image?.large_image) {
+                          result.files.push(
+                            c.msg_chunk.choices[0].image?.large_image.url
+                          )
+                          onFile?.(
+                            c.msg_chunk.choices[0].image?.large_image.url
+                          )
+                        }
+                        break
+
+                      case 'suggestion_chunk':
+                        return resolve(result)
+
+                      default:
+                        // console.log(c)
+                        break
+                    }
                   }
                 } catch (err) {
                   console.warn('OpenAI stream SEE event unexpected error', err)
@@ -258,6 +295,7 @@ export class ChatGPTAPI {
                 }
               },
               onFinish: () => {
+                // console.log('finish')
                 return resolve(result)
               }
             },
@@ -296,6 +334,7 @@ export class ChatGPTAPI {
             if (response?.choices?.length) {
               const message = response.choices[0].message
               result.text = message.content
+              result.function_call = message.function_call
               if (message.role) {
                 result.role = message.role
               }
@@ -375,14 +414,17 @@ export class ChatGPTAPI {
     this._apiOrg = apiOrg
   }
 
-  protected async _buildMessages(text: string, opts: types.SendMessageOptions) {
-    const { systemMessage = this._systemMessage } = opts
-    let { parentMessageId } = opts
+  protected async _buildMessages(
+    text: string,
+    opts: types.SendMessageOptions & {
+      cacheMessage?: types.openai.ChatCompletionRequestMessage[]
+    }
+  ) {
+    const { systemMessage = this._systemMessage, cacheMessage } = opts
 
     const userLabel = USER_LABEL_DEFAULT
     const assistantLabel = ASSISTANT_LABEL_DEFAULT
 
-    const maxNumTokens = this._maxModelTokens - this._maxResponseTokens
     let messages: types.openai.ChatCompletionRequestMessage[] = []
 
     if (systemMessage) {
@@ -392,7 +434,10 @@ export class ChatGPTAPI {
       })
     }
 
-    const systemMessageOffset = messages.length
+    if (cacheMessage) {
+      messages.push(...cacheMessage)
+    }
+
     let nextMessages = text
       ? messages.concat([
           {
@@ -404,56 +449,23 @@ export class ChatGPTAPI {
       : messages
     let numTokens = 0
 
-    do {
-      const prompt = nextMessages
-        .reduce((prompt, message) => {
-          switch (message.role) {
-            case 'system':
-              return prompt.concat([`Instructions:\n${message.content}`])
-            case 'user':
-              return prompt.concat([`${userLabel}:\n${message.content}`])
-            default:
-              return prompt.concat([`${assistantLabel}:\n${message.content}`])
-          }
-        }, [] as string[])
-        .join('\n\n')
+    const prompt = nextMessages
+      .reduce((prompt, message) => {
+        switch (message.role) {
+          case 'system':
+            return prompt.concat([`Instructions:\n${message.content}`])
+          case 'user':
+            return prompt.concat([`${userLabel}:\n${message.content}`])
+          default:
+            return prompt.concat([`${assistantLabel}:\n${message.content}`])
+        }
+      }, [] as string[])
+      .join('\n\n')
 
-      const nextNumTokensEstimate = await this._getTokenCount(prompt)
-      const isValidPrompt = nextNumTokensEstimate <= maxNumTokens
+    const nextNumTokensEstimate = await this._getTokenCount(prompt)
 
-      if (prompt && !isValidPrompt) {
-        break
-      }
-
-      messages = nextMessages
-      numTokens = nextNumTokensEstimate
-
-      if (!isValidPrompt) {
-        break
-      }
-
-      if (!parentMessageId) {
-        break
-      }
-
-      const parentMessage = await this._getMessageById(parentMessageId)
-      if (!parentMessage) {
-        break
-      }
-
-      const parentMessageRole = parentMessage.role || 'user'
-
-      nextMessages = nextMessages.slice(0, systemMessageOffset).concat([
-        {
-          role: parentMessageRole,
-          content: parentMessage.text,
-          name: parentMessage.name
-        },
-        ...nextMessages.slice(systemMessageOffset)
-      ])
-
-      parentMessageId = parentMessage.parentMessageId
-    } while (true)
+    messages = nextMessages
+    numTokens = nextNumTokensEstimate
 
     // Use up to 4096 tokens (prompt + response), but try to leave 1000 tokens
     // for the response.
@@ -485,3 +497,38 @@ export class ChatGPTAPI {
     await this._messageStore.set(message.id, message)
   }
 }
+
+// ;(async () => {
+//   const d = new ChatGPTAPI({
+//     apiKey: '1270710',
+//     apiBaseCustom: 'https://api-chatbot.xphotokit.com/v1/chat/completions',
+//     customHeader: {
+//       'user-agent': 'Ktor client'
+//     },
+//     completionParams: {
+//       function_call: 'auto',
+//       functions: [
+//         {
+//           name: 'websearch',
+//           description: 'jika kamu membutuhkan akses ke penelusuran web',
+//           parameters: {
+//             type: 'object',
+//             // specify that the parameter is an object
+//             properties: {
+//               query: {
+//                 type: 'string',
+//                 description: 'kata kunci yang ingin di cari'
+//               }
+//             },
+//             required: ['query']
+//           }
+//         }
+//       ]
+//     }
+//   })
+
+//   const dres = await d.sendMessage('juara piala dunia 2023', {
+//     onProgress: () => {}
+//   })
+//   console.log(dres)
+// })()

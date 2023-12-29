@@ -162,6 +162,7 @@ export class ChatGPTUnofficialProxyAPI {
     const result: types.ChatMessage = {
       role: 'assistant',
       id: uuidv4(),
+      files: [],
       parentMessageId: messageId,
       conversationId,
       text: ''
